@@ -1,0 +1,32 @@
+{
+  "goal": [
+    {"facts": "Okoro scored for Home in minute 12, making it 1-0",
+     "line": "goallllll, Okoro don score for the home team for minute 12, score na 1-0"},
+    {"facts": "Eze scored for Away in minute 84, making it 2-2 (it was 2-1 before)",
+     "line": "goalllllll, away don comeback oo, Eze score for away for 84 minute, scores na 2-2 now"},
+    {"facts": "Walker scored for Away in minute 5, making it 0-1",
+     "line": "away don score first: Walker score for away for minute 5, scores na 0-1"},
+    {"facts": "Silva scored for Home in minute 67, making it 3-0",
+     "line": "home don increase the gap: Silva don score for home for minute 67, scores na 3-0 now"},
+    {"facts": "Reid scored for Away in minute 89, making it 1-2 (it was 1-1 before)",
+     "line": "they don score as game wan end oo, Reid don score for away in minute 89, scores na 1-2 now from 1-1"}
+  ],
+  "injury_sub": [
+    {"facts": "Bello went off injured in minute 40, Adeyemi came on for Home",
+     "line": "Bello don injure for 40 minute, Adeyemi don come on for am for the home team"},
+    {"facts": "Danjuma went off injured for Away in minute 55, score 1-1",
+     "line": "Danjuma away don carry injury, they don comot am for the 55 minute, scores na still 1-1"},
+    {"facts": "Foster went off injured for Away in minute 75, Cole came on, score 2-0 to Home",
+     "line": "Foster don injure for away for minute 75, Cole don come on for am and away dey lose 2-0"}
+  ],
+  "attacking_spell": [
+    {"facts": "Away had 4 shots between minute 20 and minute 24: two saved, one blocked, one off target. Score 0-0",
+     "line": "pressure deyy, away don shoot 4 times between 20 and 24 minute, keeper been save two they been block one and one been go off target scores na still 0-0"},
+    {"facts": "Home had 3 shots between minute 60 and minute 63, all off target. Score 0-1 to Away",
+     "line": "pressure deyy, home don dey see chances but them no gree score they don shoot 3 times between 60 and 63 minutes, everything been go off target and them still dey lose 0-1"},
+    {"facts": "Home had 3 shots between minute 30 and minute 33: one saved, one off target, one goal by Costa. Score 1-0",
+     "line": "home been shoot 3 times between 30 and 33 minute, they been save one, one been go off target and Costa been score one. scores na 1-0 now"},
+    {"facts": "Away had 3 shots between minute 70 and minute 74, all blocked. Score 2-0 to Home",
+     "line": "away been shoot 3 times between minute 70 and 74 but they been block everything, home they lead 2-0 now"}
+  ]
+}

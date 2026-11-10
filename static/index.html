@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PitchTrace</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--text:#1d1d1b;--muted:#6b6a64;--line:#dcdad2;--good:#0f6e56;--warn:#a32d2d;--pitch:#3b8a4f;--home:#2f7fd1;--away:#e07b1f}
+@media(prefers-color-scheme:dark){:root{--bg:#161614;--card:#212120;--text:#ecebe5;--muted:#9a988f;--line:#3a3936;--good:#5dcaa5;--warn:#f09595;--pitch:#2d6a3e;--home:#4aa3ff;--away:#ff9f43}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0 8px 0 0}
+label{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
+input,select,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text)}
+input{width:110px}
+button{cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+#go{background:var(--good);color:#fff;border-color:var(--good)}
+main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;padding:16px}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.scorebar{display:flex;justify-content:space-between;font-size:18px;margin-bottom:8px}
+#pitch{width:100%;background:var(--pitch);border-radius:8px}
+.hint,#status{font-size:13px;color:var(--muted)}
+h2{font-size:14px;margin:16px 0 8px;color:var(--muted);font-weight:600}
+.trail{animation:fade 1s ease-out forwards}
+@keyframes fade{from{opacity:1}to{opacity:0}}
+#ball{transition:transform .15s linear}
+#plays,#feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#plays{gap:6px}
+#feed{gap:10px}
+.tile{display:flex;gap:10px;align-items:baseline;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:6px;padding:6px 10px;font-size:14px;animation:slide .25s ease-out}
+.tile.home{border-left-color:var(--home)}
+.tile.away{border-left-color:var(--away)}
+.tile.key{font-weight:600}
+.tile .when{color:var(--muted);min-width:44px;font-variant-numeric:tabular-nums;font-weight:400}
+@keyframes slide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.row{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.rowhead{display:flex;gap:10px}
+.min{font-weight:600;min-width:34px}
+.link{margin-top:6px;font-size:12px;padding:2px 8px}
+.ai{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:14px}
+.badge{font-size:11px;border:1px solid currentColor;border-radius:10px;padding:1px 7px;margin-right:6px}
+.badge.verified,.badge.retried{color:var(--good)}
+.badge.fallback,.badge.english_fallback{color:var(--warn)}
+details{margin-top:6px;font-size:12px;color:var(--muted)}
+details p{margin:4px 0}
+#results{margin:0 16px;padding-top:10px;display:flex;flex-direction:column;gap:6px;max-width:900px}
+#results[hidden]{display:none}
+.hit{text-align:left;padding:8px 10px}
+.hit span{color:var(--muted);font-size:13px}
+footer{padding:0 16px 24px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>PitchTrace</h1>
+  <label>Language
+    <select id="lang"><option value="pidgin">Pidgin</option><option value="english">English</option></select>
+  </label>
+  <label>Seed <input id="seed" type="number" value="6"></label>
+  <label>Home team <input id="homeName" maxlength="24" placeholder="auto"></label>
+  <label>Away team <input id="awayName" maxlength="24" placeholder="auto"></label>
+  <label>Find a real match <input id="search" placeholder="e.g. argentina france" autocomplete="off" style="width:210px"></label>
+  <label>Show
+    <select id="gender"><option value="all">Men's and women's</option><option value="men">Men's only</option><option value="women">Women's only</option></select>
+  </label>
+  <label>Real match id <input id="matchId" placeholder="optional"></label>
+  <label>Speed
+    <select id="speed"><option value="4">Watch</option><option value="10">Slow</option><option value="30" selected>Normal</option><option value="90">Fast</option></select>
+  </label>
+  <button id="go">Start match</button>
+  <button id="pause" disabled>Pause</button>
+  <span id="status"></span>
+</header>
+<div id="results" hidden></div>
+<main>
+  <section>
+    <div class="scorebar"><span id="score">-</span><span id="clock">00:00</span></div>
+    <svg id="pitch" viewBox="-2 -2 124 84"></svg>
+    <p class="hint" id="hint">Press "Show evidence" on a commentary line to see the events behind it.</p>
+    <h2>Play by play</h2>
+    <ul id="plays"></ul>
+  </section>
+  <section>
+    <h2 style="margin-top:0">Commentary</h2>
+    <ul id="feed"></ul>
+  </section>
+</main>
+<footer>Real match data: StatsBomb open data (github.com/hudl/open-data). Simulated matches are made up.</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const OUTCOME_COLOURS = { goal: "#ffd23f", saved: "#4aa3ff", blocked: "#c9c9c9", off_target: "#ff6b6b" };
+const LABELS = { verified: "Verified", retried: "Corrected, then verified",
+                 fallback: "Plain line", english_fallback: "English fallback" };
+const KEY_TYPES = new Set(["goal", "shot", "foul", "card", "substitution", "injury", "period_start", "period_end"]);
+
+let events = [], byId = new Map(), lines = [];
+let insights = new Map(), rows = new Map();
+let t = 0, ei = 0, li = 0, endT = 0, hs = 0, as = 0;
+let running = false, paused = false, raf = 0, lastFrame = 0, lastTile = 0;
+let source = null, home = "Home", away = "Away";
+let overlay, trail, ball, act;
+
+const when = (e) => e.minute * 60 + e.second;
+const clockText = (s) => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Builds an element and sets its text with textContent, which never runs HTML,
+// so names coming from the data can't inject code into the page.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function svg(parent, tag, attrs) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  parent.appendChild(n);
+  return n;
+}
+
+// The pitch is 120 wide and 80 tall, the same units as the event x and y.
+function drawPitch() {
+  const p = $("pitch");
+  p.replaceChildren();
+  const defs = svg(p, "defs", {});
+  const head = svg(defs, "marker", { id: "head", viewBox: "0 0 10 10", refX: 8, refY: 5,
+                                     markerWidth: 4, markerHeight: 4, orient: "auto" });
+  svg(head, "path", { d: "M0 0L10 5L0 10z", fill: "context-stroke" });
+  const line = { fill: "none", stroke: "rgba(255,255,255,.85)", "stroke-width": 0.4 };
+  svg(p, "rect", { x: 0, y: 0, width: 120, height: 80, ...line });
+  svg(p, "line", { x1: 60, y1: 0, x2: 60, y2: 80, ...line });
+  svg(p, "circle", { cx: 60, cy: 40, r: 10, ...line });
+  svg(p, "rect", { x: 0, y: 18, width: 18, height: 44, ...line });
+  svg(p, "rect", { x: 102, y: 18, width: 18, height: 44, ...line });
+  svg(p, "rect", { x: 0, y: 30, width: 6, height: 20, ...line });
+  svg(p, "rect", { x: 114, y: 30, width: 6, height: 20, ...line });
+  svg(p, "rect", { x: -1.5, y: 36, width: 1.5, height: 8, ...line });
+  svg(p, "rect", { x: 120, y: 36, width: 1.5, height: 8, ...line });
+  overlay = svg(p, "g", {});   // evidence for a commentary line
+  trail = svg(p, "g", {});     // the last few moves, which fade out
+  ball = svg(p, "g", { style: "transform: translate(60px, 40px)", id: "ball" });
+  svg(ball, "circle", { r: 1.3, fill: "#fff", stroke: "#111", "stroke-width": 0.3 });
+  act = svg(p, "text", { "font-size": 2.6, fill: "#fff", stroke: "rgba(0,0,0,.65)",
+                         "stroke-width": 0.6, "paint-order": "stroke" });
+}
+
+function describe(e) {
+  const who = e.player || e.team;
+  switch (e.type) {
+    case "pass": return e.outcome === "complete"
+      ? `${who} passes to ${e.target || "a teammate"}`
+      : `${who} loses it: pass to ${e.target || "a teammate"} fails`;
+    case "shot": return `${who} shoots: ${(e.outcome || "").replace("_", " ")}`;
+    case "goal": return `GOAL! ${who} scores for ${e.team}`;
+    case "tackle": return e.outcome === "won" ? `${who} wins the ball with a tackle` : `${who} tackles but doesn't win it`;
+    case "foul": return `Foul by ${who}`;
+    case "card": return `${cap(e.detail || "card")} for ${who}`;
+    case "substitution": return `${who} off${e.detail ? " (" + e.detail + ")" : ""}, ${e.player_on || "a substitute"} on`;
+    case "injury": return `${who} is down injured`;
+    case "period_start": return "Kick-off";
+    case "period_end": return "End of period";
+    default: return e.type;
+  }
+}
+
+function addTile(e) {
+  const key = KEY_TYPES.has(e.type) || (e.type === "tackle" && e.outcome === "won");
+  const now = performance.now();
+  // Passes are throttled: at high speeds showing every one would be a blur.
+  if (!key && now - lastTile < 350) return;
+  lastTile = now;
+  const li = el("li", `tile ${e.team === home ? "home" : "away"}${key ? " key" : ""}`);
+  li.append(el("span", "when", clockText(when(e))), el("span", "", describe(e)));
+  $("plays").prepend(li);
+  while ($("plays").childElementCount > 8) $("plays").lastChild.remove();
+}
+
+// Draws the move for one event, and the shape depends on its type.
+function drawMove(e) {
+  const teamColour = e.team === home ? "#7cc4ff" : "#ffb36b";
+  if (e.type === "pass" && e.x != null && e.end_x != null) {
+    svg(trail, "line", { class: "trail", x1: e.x, y1: e.y, x2: e.end_x, y2: e.end_y,
+      stroke: e.outcome === "complete" ? teamColour : "#ff6b6b",
+      "stroke-width": 0.5, "marker-end": "url(#head)",
+      "stroke-dasharray": e.outcome === "complete" ? "none" : "1 0.8" });
+  } else if ((e.type === "shot" || e.type === "goal") && e.x != null) {
+    const c = OUTCOME_COLOURS[e.type === "goal" ? "goal" : e.outcome] || "#fff";
+    svg(trail, "line", { class: "trail", x1: e.x, y1: e.y, x2: e.end_x ?? 120, y2: e.end_y ?? 40,
+      stroke: c, "stroke-width": 0.8, "marker-end": "url(#head)" });
+    if (e.type === "goal") svg(trail, "circle", { class: "trail", cx: 118, cy: e.end_y ?? 40, r: 4, fill: c });
+  } else if (e.type === "tackle" && e.x != null) {
+    svg(trail, "circle", { class: "trail", cx: e.x, cy: e.y, r: 2, fill: "none", stroke: "#fff", "stroke-width": 0.5 });
+  } else if (e.type === "foul" && e.x != null) {
+    svg(trail, "circle", { class: "trail", cx: e.x, cy: e.y, r: 1.8, fill: "#ff6b6b" });
+  } else if (e.type === "card" && e.x != null) {
+    svg(trail, "rect", { class: "trail", x: e.x - 1, y: e.y - 1.6, width: 2, height: 3.2,
+      fill: (e.detail || "").includes("red") ? "#e53935" : "#ffd23f" });
+  } else if (e.type === "injury" && e.x != null) {
+    svg(trail, "circle", { class: "trail", cx: e.x, cy: e.y, r: 2.6, fill: "#ff6b6b" });
+  }
+  // Remove a move once its fade ends, with a cap in case a tab was in the background.
+  trail.lastChild?.addEventListener("animationend", (ev) => ev.target.remove());
+  while (trail.childElementCount > 40) trail.firstChild.remove();
+}
+
+function moveBall(e, gapSeconds) {
+  const x = e.end_x ?? e.x, y = e.end_y ?? e.y;
+  if (x == null) return;
+  const speed = Number($("speed").value);
+  ball.style.transitionDuration = Math.min(400, Math.max(30, (gapSeconds / speed) * 900)) + "ms";
+  ball.style.transform = `translate(${x}px, ${y}px)`;
+  act.textContent = e.type === "pass" && e.target ? `${e.player} > ${e.target}` : (e.player || "");
+  act.setAttribute("x", x > 95 ? x - 2 : x + 2);
+  act.setAttribute("y", y - 2.4);
+  act.setAttribute("text-anchor", x > 95 ? "end" : "start");
+}
+
+function renderScore() { $("score").textContent = `${home} ${hs} - ${as} ${away}`; }
+
+// Plays one event: the move, the ball, the tile, and the score.
+function fire(e, gapSeconds) {
+  drawMove(e);
+  moveBall(e, gapSeconds);
+  addTile(e);
+  if (e.type === "goal") { e.team === home ? hs++ : as++; renderScore(); }
+}
+
+function showEvidence(ids) {
+  overlay.replaceChildren();
+  let drawn = 0;
+  for (const id of ids) {
+    const e = byId.get(id);
+    if (!e || e.x == null) continue;
+    drawn++;
+    const c = OUTCOME_COLOURS[e.type === "goal" ? "goal" : e.outcome] || "#fff";
+    if (e.end_x != null && e.end_y != null) {
+      svg(overlay, "line", { x1: e.x, y1: e.y, x2: e.end_x, y2: e.end_y, stroke: c,
+                             "stroke-width": 0.5, "marker-end": "url(#head)" });
+    }
+    svg(overlay, "circle", { cx: e.x, cy: e.y, r: 1.4, fill: c, stroke: "#fff", "stroke-width": 0.3 });
+    const label = svg(overlay, "text", {
+      x: e.x > 100 ? e.x - 2 : e.x + 2, y: e.y - 2, "font-size": 2.6, fill: "#fff",
+      stroke: "rgba(0,0,0,.6)", "stroke-width": 0.6, "paint-order": "stroke",
+      "text-anchor": e.x > 100 ? "end" : "start" });
+    label.textContent = `${e.player ?? e.type} ${e.minute}'`;
+  }
+  $("hint").textContent = drawn
+    ? `Showing ${drawn} of ${ids.length} events behind this line.`
+    : "These events have no pitch position (for example, a substitution).";
+}
+
+function attachInsight(d) {
+  const box = rows.get(d.id);
+  if (!box) return;
+  box.replaceChildren();
+  const top = el("div");
+  top.append(el("span", `badge ${d.status}`, LABELS[d.status] || d.status),
+             document.createTextNode(d.text));
+  box.append(top);
+  if (d.attempts.length || d.narration_checks.length) {
+    const det = el("details");
+    det.append(el("summary", "", "How it was checked"));
+    d.attempts.forEach((a, i) => det.append(el("p", "",
+      `Insight try ${i + 1}: ${a.verdict}. ${a.claim}${a.reason ? " (" + a.reason + ")" : ""}`)));
+    d.narration_checks.forEach((a, i) => {
+      det.append(el("p", "", `Line check ${i + 1}: ${a.verdict}${a.reason ? " (" + a.reason + ")" : ""}`));
+      if (a.english) det.append(el("p", "", `Read back in English: ${a.english}`));
+    });
+    box.append(det);
+  }
+}
+
+function addRow(line) {
+  const row = el("li", "row");
+  const head = el("div", "rowhead");
+  head.append(el("span", "min", `${line.minute}'`), el("span", "", line.text));
+  const btn = el("button", "link", "Show evidence");
+  btn.onclick = () => showEvidence(line.evidence);
+  const ai = el("div", "ai", "AI check running...");
+  row.append(head, btn, ai);
+  $("feed").prepend(row);
+  rows.set(line.id, ai);
+  if (insights.has(line.id)) attachInsight(insights.get(line.id));
+}
+
+// The replay clock. Every frame, match time moves forward by the real time
+// that passed multiplied by the speed. Then every event and commentary line
+// whose time has arrived is played, in order.
+function frame(now) {
+  if (!running) return;
+  if (!paused) {
+    t += ((now - lastFrame) / 1000) * Number($("speed").value);
+    while (ei < events.length && when(events[ei]) <= t) {
+      const next = events[ei + 1];
+      fire(events[ei], next ? when(next) - when(events[ei]) : 1);
+      ei++;
+    }
+    while (li < lines.length && lines[li].t <= t) { addRow(lines[li]); li++; }
+    $("clock").textContent = clockText(Math.min(t, endT));
+    if (ei >= events.length && t >= endT) {
+      running = false;
+      $("pause").disabled = true;
+      $("status").textContent = "Full time.";
+      return;
+    }
+  }
+  lastFrame = now;
+  raf = requestAnimationFrame(frame);
+}
+
+function stopAll() {
+  running = false;
+  cancelAnimationFrame(raf);
+  if (source) { source.close(); source = null; }
+}
+
+async function ok(r) {
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+// Every press of Start gets a number. If a newer press happens while an older
+// one is still downloading, the older one quietly stops when its data arrives,
+// so two matches can never run at once.
+let startSeq = 0;
+
+async function start() {
+  const mine = ++startSeq;
+  stopAll();
+  $("go").disabled = true;   // no double clicks while a match is loading
+  const mid = $("matchId").value.trim();
+  $("status").textContent = mid
+    ? "Downloading the match from StatsBomb. The first time can take 10 seconds or more..."
+    : "Loading...";
+  const q = new URLSearchParams({ seed: $("seed").value || "6", language: $("lang").value });
+  const homeName = $("homeName").value.trim(), awayName = $("awayName").value.trim();
+  if (homeName) q.set("home", homeName);
+  if (awayName) q.set("away", awayName);
+  if (mid) q.set("match_id", mid);
+  let loadedEvents, loadedLines;
+  try {
+    [loadedEvents, loadedLines] = await Promise.all([
+      fetch(mid ? `/real_match/${encodeURIComponent(mid)}` : `/match?${q}`).then(ok),
+      fetch(`/ticker?${q}`).then(ok),
+    ]);
+  } catch (err) {
+    if (mine === startSeq) {
+      $("status").textContent = `Could not load: ${err.message}`;
+      $("go").disabled = false;
+    }
+    return;
+  }
+  if (mine !== startSeq) return;   // a newer Start took over while we were loading
+  events = loadedEvents;
+  lines = loadedLines;
+  byId = new Map(events.map(e => [e.id, e]));
+  home = events[0].team;
+  away = (events.find(e => e.team !== home) || { team: "Away" }).team;
+  endT = when(events[events.length - 1]);
+  t = 0; ei = 0; li = 0; hs = 0; as = 0; lastTile = 0;
+  rows.clear(); insights.clear();
+  $("feed").replaceChildren();
+  $("plays").replaceChildren();
+  drawPitch();
+  renderScore();
+  $("clock").textContent = "00:00";
+  $("hint").textContent = 'Press "Show evidence" on a commentary line to see the events behind it.';
+  $("status").textContent = `${pickedLabel ? pickedLabel + ". " : ""}Playing. AI checks arrive as they finish.`;
+
+  // Two channels: the ticker above arrived instantly, and this one delivers
+  // AI results whenever they are ready.
+  source = new EventSource(`/stream?${q}`);
+  source.onmessage = (m) => { const d = JSON.parse(m.data); insights.set(d.id, d); attachInsight(d); };
+  source.addEventListener("done", () => source.close());
+  source.onerror = () => source.close();
+
+  paused = false;
+  $("pause").textContent = "Pause";
+  $("pause").disabled = false;
+  $("go").disabled = false;
+  running = true;
+  lastFrame = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+
+// ---- search for a real match ----
+let searchTimer = 0, searchSeq = 0, pickedLabel = "";
+
+function hideResults() { $("results").hidden = true; $("results").replaceChildren(); }
+
+function showMessage(text) {
+  $("results").replaceChildren(el("p", "hint", text));
+  $("results").hidden = false;
+}
+
+const scoreText = (m) => (m.home_score == null ? "v" : `${m.home_score}-${m.away_score}`);
+
+// Choosing a result fills in the match id and starts the match.
+function pick(m) {
+  pickedLabel = `${m.home} v ${m.away}`;
+  $("matchId").value = m.match_id;
+  $("search").value = "";
+  hideResults();
+  start();
+}
+
+async function runSearch(text) {
+  const mine = ++searchSeq;   // so a slow old answer can't replace a newer one
+  showMessage("Searching...");
+  const gender = $("gender").value;
+  try {
+    const r = await fetch(`/search?q=${encodeURIComponent(text)}&limit=12&gender=${gender}`);
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    const data = await r.json();
+    if (mine !== searchSeq) return;
+    if (!data.results.length) {
+      showMessage(`No matches for "${text}" in StatsBomb's open data.`);
+      return;
+    }
+    const box = $("results");
+    const scope = gender === "men" ? "men's " : gender === "women" ? "women's " : "";
+    box.replaceChildren(el("p", "hint",
+      `${data.found} found (of ${data.indexed.toLocaleString()} ${scope}matches in StatsBomb's open data)` +
+      (data.found > data.results.length ? `, showing the first ${data.results.length}` : "")));
+    for (const m of data.results) {
+      const b = el("button", "hit");
+      const tag = m.gender ? ` · ${cap(m.gender)}` : "";
+      b.append(el("strong", "", `${m.home} ${scoreText(m)} ${m.away}`),
+               el("span", "", ` · ${m.date} · ${m.competition} ${m.season}${m.stage ? ", " + m.stage : ""}${tag}`));
+      b.onclick = () => pick(m);
+      box.append(b);
+    }
+    box.hidden = false;
+  } catch (err) {
+    if (mine === searchSeq) showMessage(`Search failed: ${err.message}`);
+  }
+}
+
+$("search").oninput = () => {
+  clearTimeout(searchTimer);
+  searchSeq++;
+  const text = $("search").value.trim();
+  if (text.length < 2) { hideResults(); return; }
+  searchTimer = setTimeout(() => runSearch(text), 300);   // wait until typing pauses
+};
+
+// Changing the Men's / Women's choice re-runs whatever is typed in the box.
+$("gender").onchange = () => {
+  const text = $("search").value.trim();
+  if (text.length >= 2) runSearch(text);
+};
+
+$("matchId").oninput = () => { pickedLabel = ""; };
+
+$("go").onclick = start;
+$("pause").onclick = () => {
+  paused = !paused;
+  $("pause").textContent = paused ? "Resume" : "Pause";
+  if (!paused) lastFrame = performance.now();
+};
+</script>
+</body>
+</html>
